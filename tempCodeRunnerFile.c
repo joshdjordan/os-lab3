@@ -1,0 +1,1 @@
+fwrite(&node, sizeof(inode), 1, disk);

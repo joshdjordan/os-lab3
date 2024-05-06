@@ -3,7 +3,7 @@
 #include <stdlib.h>
 
 #define INODE_SIZE 56
-#define LIST_SIZE 128
+#define LIST_SIZE 129
 #define BLOCK_SIZE 1024
 
 typedef struct {
@@ -19,14 +19,14 @@ typedef struct {
     int value;
 } cmd;
 
-void create(char name[16], int size) {
+void create(char name[16], int size, char diskName[20]) {
     inode node;
     int availSpace = 0;
     int freeBlockList[LIST_SIZE];
     int availNodeInd = -1;
 
     // step 1: check to see if there is enough available space on the disk to write file
-    FILE *disk = fopen("mydisk0", "rb+");
+    FILE *disk = fopen(diskName, "rb+");
     if (disk == NULL) {
         perror("error opening file for create");
         exit(1);
@@ -34,12 +34,22 @@ void create(char name[16], int size) {
 
     fread(freeBlockList, sizeof(int), LIST_SIZE, disk);
 
+    // printf("\nfree block list:\n");
+    // for (int i = 1 ; i < LIST_SIZE; i++) {
+    //     if (i % 8 == 1) {
+    //         printf("\n");
+    //     }
+    //     printf("%d ", freeBlockList[i]);
+    // }
+    // printf("\n");
+
     // setting available space on disk
     for (int i = 0; i < LIST_SIZE; i++) {
         if (freeBlockList[i] == 0) {
             availSpace++;
         }
     }
+    // printf("avail space: %d\n", availSpace);
 
     // checks if enough space on disk
     if (availSpace < size) {
@@ -53,7 +63,11 @@ void create(char name[16], int size) {
         fseek(disk, i, SEEK_SET);
         fread(&node, sizeof(inode), 1, disk);
 
+        // printf("\nnode.name: %s\nnode.size: %d\nnode.used: %d\n", node.name, node.size, node.used);
+
         if (node.used == 0) {
+            // printf("index found at i = %d\n", i);
+
             availNodeInd = i;
             break;
         }
@@ -74,10 +88,13 @@ void create(char name[16], int size) {
     for (int i = 0; i < size; i++) {
         int blockInd = -1;
         for (int j = 1; j < LIST_SIZE; j++) {
-            blockInd = j;
-            freeBlockList[j] = 1;
-            node.blockPointer[i] = blockInd;
-            break;
+            // if available block found
+            if (freeBlockList[j] == 0) {
+                blockInd = j;
+                freeBlockList[j] = 1;
+                node.blockPointer[i] = j;
+                break;
+            }
         }
 
         // checks after the inner loop completes if the server was unable to allocate
@@ -92,17 +109,17 @@ void create(char name[16], int size) {
     fseek(disk, 0, SEEK_SET);
     fwrite(freeBlockList, sizeof(int), LIST_SIZE, disk);
 
-    fseek(disk, LIST_SIZE + availNodeInd * sizeof(inode), SEEK_SET);
+    fseek(disk, availNodeInd, SEEK_SET);
     fwrite(&node, sizeof(inode), 1, disk);
 
     fclose(disk);
 }
 
-void delete(char name[16]) {
+void delete(char name[16], char diskName[20]) {
     inode node;
     int freeBlockList[LIST_SIZE];
 
-    FILE *disk = fopen("mydisk0", "rb+");
+    FILE *disk = fopen(diskName, "rb+");
     if (disk == NULL) {
         perror("error opening file to delete");
         exit(1);
@@ -138,11 +155,10 @@ void delete(char name[16]) {
     fclose(disk);
 }
 
-void read(char name[16], int blockNum, char buffer[1024]) {
+void read(char name[16], int blockNum, char buffer[1024], char diskName[20]) {
     inode node;
-    int iter = 0;
 
-    FILE *disk = fopen("mydisk0", "rb+");
+    FILE *disk = fopen(diskName, "rb+");
     if (disk == NULL) {
         perror("error opening file to read");
         exit(1);
@@ -167,10 +183,10 @@ void read(char name[16], int blockNum, char buffer[1024]) {
     }
 }
 
-void write(char name[16], int blockNum, char buffer[1024]) {
+void write(char name[16], int blockNum, char buffer[1024], char diskName[20]) {
     inode node;
 
-    FILE *disk = fopen("mydisk0", "rb+");
+    FILE *disk = fopen(diskName, "rb+");
     if (disk == NULL) {
         perror("error opening file to write");
         exit(1);
@@ -196,10 +212,10 @@ void write(char name[16], int blockNum, char buffer[1024]) {
     }
 }
 
-void ls() {
+void ls(char diskName[20]) {
     inode node;
 
-    FILE *disk = fopen("mydisk0", "rb+");
+    FILE *disk = fopen(diskName, "rb+");
     if (disk == NULL) {
         perror("error opening file for ls");
         exit(1);
@@ -225,7 +241,7 @@ int main() {
     const char *delim = " ";
     char dummyBuffer[1024];
     char buffer[1024];
-    char diskName[20];
+    char diskName[8];
     int infoLength;
 
     memset(dummyBuffer, '1', sizeof(dummyBuffer));
@@ -236,14 +252,31 @@ int main() {
         exit(1);
     }
 
+    fgets(info, sizeof(info), test);
+
+    infoLength = strlen(info);
+    if (info[infoLength - 1] == '\n') {
+        info[infoLength - 1] = '\0'; // null terminating new line
+    }
+
+    char *token = strtok(info, delim);
+
     int tokIter = 0;
+
+    if (token != NULL) {
+        strncpy(diskName, token, sizeof(diskName));
+        diskName[strlen(diskName)] = '\0'; // null termination
+        tokIter++;
+    }
+    printf("%s\n", diskName);
+
     while (fgets(info, sizeof(info), test) && tokIter < 50) {
         infoLength = strlen(info);
         if (infoLength > 0 && info[infoLength - 1] == '\n') {
             info[infoLength - 1] = '\0'; // null terminating new line to prevent final quote to be on new line
         }
 
-        char *token = strtok(info, delim);
+        token = strtok(info, delim);
 
         if (token != NULL) {
             strncpy(instructions[tokIter].instrucT, token, sizeof(instructions[tokIter].instrucT) - 1);
@@ -267,7 +300,7 @@ int main() {
 
     for (int i = 0; i < tokIter; i++) {
         if (!strcmp(instructions[i].instrucT, "C")) {
-            create(instructions[i].fileName, instructions[i].value);
+            create(instructions[i].fileName, instructions[i].value, diskName);
 
             printf("\n----- Created File -----\n");
             printf("   Name\t\tSize\n");
@@ -276,7 +309,7 @@ int main() {
         }
 
         else if (!strcmp(instructions[i].instrucT, "D")) {
-            delete(instructions[i].fileName);
+            delete(instructions[i].fileName, diskName);
 
             printf("\n------ Deleted File ------\n");
             printf("    File Name: %s\n", instructions[i].fileName);
@@ -284,7 +317,7 @@ int main() {
         }
 
         else if (!strcmp(instructions[i].instrucT, "W")) {
-            write(instructions[i].fileName, instructions[i].value, dummyBuffer);
+            write(instructions[i].fileName, instructions[i].value, dummyBuffer, diskName);
 
             printf("\n------ Wrote File ------\n");
             printf("  Name\t   Block Number\n");
@@ -293,7 +326,7 @@ int main() {
         }
 
         else if (!strcmp(instructions[i].instrucT, "R")) {
-            read(instructions[i].fileName, instructions[i].value, buffer);
+            read(instructions[i].fileName, instructions[i].value, buffer, diskName);
 
             printf("\n------ Read File ------\n");
             printf("  Name\t   Block Number\n");
@@ -302,7 +335,7 @@ int main() {
         }
 
         else if (!strcmp(instructions[i].instrucT, "L")) {
-            ls();
+            ls(diskName);
         }
     }
 }
